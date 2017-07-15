@@ -2,6 +2,7 @@
 #include <gba_input.h>
 #include <gba_interrupt.h>
 #include <gba_sio.h>
+#include <gba_timers.h>
 
 #define ROM            ((uint8_t *)0x08000000)
 #define ROM_GPIODATA *((uint16_t *)0x080000C4)
@@ -118,8 +119,9 @@ int SIGetCommand(void *buf, unsigned bits);
 
 int IWRAM_CODE main(void)
 {
-	REG_RCNT = R_GPIO | GPIO_SO_IO | GPIO_SO;
-	REG_IE = IRQ_SERIAL;
+	REG_RCNT = R_GPIO | GPIO_IRQ | GPIO_SO_IO | GPIO_SO;
+	REG_IE = IRQ_SERIAL | IRQ_TIMER0;
+	REG_TM0CNT_L = -64;
 
 	while (true) {
 		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
