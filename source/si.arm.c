@@ -2,8 +2,7 @@
 #include <gba_interrupt.h>
 #include <gba_sio.h>
 #include <gba_timers.h>
-
-static void (*Halt)(void) = (void *)0x000001A0;
+#include "bios.h"
 
 void IWRAM_CODE SISetResponse(const void *buf, unsigned bits)
 {
@@ -177,18 +176,19 @@ int IWRAM_CODE SIGetCommand(void *buf, unsigned bits)
 	unsigned byte = 0, bit = 0;
 	unsigned irq;
 
-	REG_TM0CNT_H = 0;
+	REG_TM2CNT_H = REG_TM0CNT_H = 0;
 	REG_IF = irq = REG_IF;
+	REG_TM2CNT_H = TIMER_START | TIMER_IRQ | 3;
 
 	do {
-		Halt();
+		CustomHalt(irq & IRQ_TIMER2 ? STOP : HALT);
 		REG_TM0CNT_H = 0;
 		REG_IF = irq = REG_IF;
 		REG_TM0CNT_H = TIMER_START | TIMER_IRQ;
 
 		if (irq & IRQ_SERIAL) {
 			byte <<= 1;
-			byte |= !!((REG_RCNT | REG_RCNT) & GPIO_SI);
+			byte |= !!((REG_RCNT | REG_RCNT | REG_RCNT) & GPIO_SI);
 
 			if (++bit % 8 == 0)
 				*(uint8_t *)buf++ = byte;
