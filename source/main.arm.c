@@ -12,7 +12,18 @@
 
 //#define ANALOG
 
-static uint8_t id[] = {0x05, 0x00, 0x01};
+enum {
+	CMD_ID = 0x00,
+	CMD_STATUS,
+	CMD_READ,
+	CMD_WRITE,
+	CMD_RESET = 0xFF
+};
+
+static struct {
+	uint8_t type[2];
+	uint8_t status;
+} id = {{0x05, 0x00}, 0x01};
 
 static struct {
 	struct {
@@ -50,6 +61,7 @@ static bool has_motor(void)
 				return false;
 		}
 	}
+
 	return false;
 }
 
@@ -122,21 +134,28 @@ int SIGetCommand(void *buf, unsigned bits);
 
 int IWRAM_CODE main(void)
 {
-	SoundBias(0);
+	REG_IE = IRQ_SERIAL | IRQ_TIMER1 | IRQ_TIMER0;
+	REG_IF = REG_IF;
+
 	REG_RCNT = R_GPIO | GPIO_IRQ | GPIO_SO_IO | GPIO_SO;
-	REG_IE = IRQ_SERIAL | IRQ_TIMER0;
-	REG_TM0CNT_L = -64;
+
+	REG_TM0CNT_L = -67;
+	REG_TM1CNT_H = TIMER_START | TIMER_IRQ | TIMER_COUNT;
+	REG_TM0CNT_H = TIMER_START;
+
+	SoundBias(0);
+	Halt();
 
 	while (true) {
 		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
 		if (length < 9) continue;
 
 		switch (buffer[0]) {
-			case 0x00:
-			case 0xFF:
-				if (length == 9) SISetResponse(id, sizeof(id) * 8);
+			case CMD_RESET:
+			case CMD_ID:
+				if (length == 9) SISetResponse(&id, sizeof(id) * 8);
 				break;
-			case 0x01:
+			case CMD_STATUS:
 				if (length == 9) {
 					unsigned buttons     = ~REG_KEYINPUT;
 					#ifndef ANALOG
@@ -176,20 +195,20 @@ int IWRAM_CODE main(void)
 					SISetResponse(&status, sizeof(status) * 8);
 				}
 				break;
-			case 0x02:
+			case CMD_READ:
 				if (length == 25) {
-					uint16_t address = (buffer[1] << 8 | buffer[2]) & ~0x1F;
+					uint16_t address   = (buffer[2] | buffer[1] << 8) & ~0x1F;
 					if (crc5(address) != (buffer[2] & 0x1F)) break;
 
 					buffer[35] = pak_copyfrom(address, &buffer[3],
 						(address & 0x8000) == 0x8000 && has_motor() ? 0x81 : 0xFF);
 
-					SISetResponse(&buffer[3], 33 * 8);
+					SISetResponse(&buffer[3], 264);
 				}
 				break;
-			case 0x03:
+			case CMD_WRITE:
 				if (length == 281) {
-					uint16_t address = (buffer[1] << 8 | buffer[2]) & ~0x1F;
+					uint16_t address   = (buffer[2] | buffer[1] << 8) & ~0x1F;
 					if (crc5(address) != (buffer[2] & 0x1F)) break;
 
 					if ((address & 0x8000) == 0x8000) {
@@ -204,7 +223,7 @@ int IWRAM_CODE main(void)
 
 					buffer[35] = pak_copyto(address, &buffer[3]);
 
-					SISetResponse(&buffer[35], 1 * 8);
+					SISetResponse(&buffer[35], 8);
 				}
 				break;
 		}
