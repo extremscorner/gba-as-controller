@@ -134,6 +134,8 @@ int SIGetCommand(void *buf, unsigned bits);
 
 int IWRAM_CODE main(void)
 {
+	RegisterRamReset(RESET_ALL_REG);
+
 	REG_IE = IRQ_SERIAL | IRQ_TIMER1 | IRQ_TIMER0;
 	REG_IF = REG_IF;
 
@@ -211,6 +213,10 @@ int IWRAM_CODE main(void)
 					uint16_t address   = (buffer[2] | buffer[1] << 8) & ~0x1F;
 					if (crc5(address) != (buffer[2] & 0x1F)) break;
 
+					buffer[35] = pak_copyto(address, &buffer[3]);
+
+					SISetResponse(&buffer[35], 8);
+
 					if ((address & 0x8000) == 0x8000) {
 						if (buffer[3] & 0x01) {
 							ROM_GPIOCNT  = 1;
@@ -220,10 +226,6 @@ int IWRAM_CODE main(void)
 							ROM_GPIODATA = 0;
 						}
 					}
-
-					buffer[35] = pak_copyto(address, &buffer[3]);
-
-					SISetResponse(&buffer[35], 8);
 				}
 				break;
 		}
