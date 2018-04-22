@@ -125,6 +125,8 @@ int SIGetCommand(void *buf, unsigned bits);
 
 int IWRAM_CODE main(void)
 {
+	RegisterRamReset(RESET_ALL_REG);
+
 	REG_IE = IRQ_SERIAL | IRQ_TIMER2 | IRQ_TIMER1 | IRQ_TIMER0;
 	REG_IF = REG_IF;
 
@@ -157,6 +159,7 @@ int IWRAM_CODE main(void)
 
 		switch (buffer[0]) {
 			case CMD_RESET:
+				id.status.motor = MOTOR_STOP;
 			case CMD_ID:
 				if (length == 9) {
 					if (has_motor()) {
@@ -228,17 +231,6 @@ int IWRAM_CODE main(void)
 							break;
 					}
 
-					switch (id.status.motor) {
-						default:
-							ROM_GPIODATA = 0;
-							break;
-						case MOTOR_RUMBLE:
-							ROM_GPIOCNT  = 1;
-							ROM_GPIODIR  = 1 << 3;
-							ROM_GPIODATA = 1 << 3;
-							break;
-					}
-
 					SISetResponse(&status, sizeof(status) * 8);
 				}
 				break;
@@ -247,7 +239,23 @@ int IWRAM_CODE main(void)
 				break;
 			case CMD_RECALIBRATE:
 			case CMD_STATUS_LONG:
-				if (length == 25) SISetResponse(&origin, sizeof(origin) * 8);
+				if (length == 25) {
+					id.status.mode  = buffer[1];
+					id.status.motor = buffer[2];
+
+					SISetResponse(&origin, sizeof(origin) * 8);
+				}
+				break;
+		}
+
+		switch (id.status.motor) {
+			default:
+				ROM_GPIODATA = 0;
+				break;
+			case MOTOR_RUMBLE:
+				ROM_GPIOCNT  = 1;
+				ROM_GPIODIR  = 1 << 3;
+				ROM_GPIODATA = 1 << 3;
 				break;
 		}
 	}
