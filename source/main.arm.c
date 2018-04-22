@@ -58,6 +58,8 @@ int SIGetCommand(void *buf, unsigned bits);
 
 int IWRAM_CODE main(void)
 {
+	RegisterRamReset(RESET_ALL_REG);
+
 	REG_IE = IRQ_SERIAL | IRQ_TIMER2 | IRQ_TIMER1 | IRQ_TIMER0;
 	REG_IF = REG_IF;
 
