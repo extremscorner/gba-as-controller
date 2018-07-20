@@ -1,14 +1,15 @@
 #include <stdint.h>
+#include <gba_dma.h>
 #include <gba_input.h>
 #include <gba_interrupt.h>
 #include <gba_sio.h>
 #include <gba_timers.h>
 #include "bios.h"
 
-#define ROM            ((uint8_t *)0x08000000)
-#define ROM_GPIODATA *((uint16_t *)0x080000C4)
-#define ROM_GPIODIR  *((uint16_t *)0x080000C6)
-#define ROM_GPIOCNT  *((uint16_t *)0x080000C8)
+#define ROM           ((int16_t *)0x08000000)
+#define ROM_GPIODATA *((int16_t *)0x080000C4)
+#define ROM_GPIODIR  *((int16_t *)0x080000C6)
+#define ROM_GPIOCNT  *((int16_t *)0x080000C8)
 
 //#define ANALOG
 
@@ -105,19 +106,59 @@ static struct {
 
 static uint8_t buffer[128];
 
+static enum {
+	RUMBLE_NONE = 0,
+	RUMBLE_GBA,
+	RUMBLE_NDS,
+	RUMBLE_NDS_SLIDE,
+} rumble;
+
 static bool has_motor(void)
 {
-	if (0x96 == ROM[0xB2]) {
-		switch (ROM[0xAC]) {
-			case 'R':
-			case 'V':
-				return true;
-			default:
-				return false;
-		}
+	switch (ROM[0x59]) {
+		case 0x59:
+			switch (ROM[0xFFFFFF]) {
+				case ~0x0002:
+					rumble = RUMBLE_NDS;
+					return true;
+				case ~0x0101:
+					rumble = RUMBLE_NDS_SLIDE;
+					return true;
+			}
+			break;
+		case 0x96:
+			switch (ROM[0x56] & 0xFF) {
+				case 'R':
+				case 'V':
+					rumble = RUMBLE_GBA;
+					return true;
+			}
+			break;
 	}
 
+	rumble = RUMBLE_NONE;
 	return false;
+}
+
+static void set_motor(bool enable)
+{
+	switch (rumble) {
+		case RUMBLE_NONE:
+			break;
+		case RUMBLE_GBA:
+			ROM_GPIODIR  =      1 << 3;
+			ROM_GPIODATA = enable << 3;
+			break;
+		case RUMBLE_NDS:
+			if (enable)
+				DMA3COPY(SRAM, SRAM, DMA_VBLANK | DMA_REPEAT | 1)
+			else
+				REG_DMA3CNT &= ~DMA_REPEAT;
+			break;
+		case RUMBLE_NDS_SLIDE:
+			*ROM = enable << 8;
+			break;
+	}
 }
 
 void SISetResponse(const void *buf, unsigned bits);
@@ -248,15 +289,6 @@ int IWRAM_CODE main(void)
 				break;
 		}
 
-		switch (id.status.motor) {
-			default:
-				ROM_GPIODATA = 0;
-				break;
-			case MOTOR_RUMBLE:
-				ROM_GPIOCNT  = 1;
-				ROM_GPIODIR  = 1 << 3;
-				ROM_GPIODATA = 1 << 3;
-				break;
-		}
+		set_motor(id.status.motor == MOTOR_RUMBLE);
 	}
 }
