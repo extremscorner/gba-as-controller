@@ -1,14 +1,15 @@
 #include <stdint.h>
+#include <gba_dma.h>
 #include <gba_input.h>
 #include <gba_interrupt.h>
 #include <gba_sio.h>
 #include <gba_timers.h>
 #include "bios.h"
 
-#define ROM            ((uint8_t *)0x08000000)
-#define ROM_GPIODATA *((uint16_t *)0x080000C4)
-#define ROM_GPIODIR  *((uint16_t *)0x080000C6)
-#define ROM_GPIOCNT  *((uint16_t *)0x080000C8)
+#define ROM           ((int16_t *)0x08000000)
+#define ROM_GPIODATA *((int16_t *)0x080000C4)
+#define ROM_GPIODIR  *((int16_t *)0x080000C6)
+#define ROM_GPIOCNT  *((int16_t *)0x080000C8)
 
 //#define ANALOG
 
@@ -50,19 +51,59 @@ static struct {
 
 static uint8_t buffer[128];
 
+static enum {
+	RUMBLE_NONE = 0,
+	RUMBLE_GBA,
+	RUMBLE_NDS,
+	RUMBLE_NDS_SLIDE,
+} rumble;
+
 static bool has_motor(void)
 {
-	if (0x96 == ROM[0xB2]) {
-		switch (ROM[0xAC]) {
-			case 'R':
-			case 'V':
-				return true;
-			default:
-				return false;
-		}
+	switch (ROM[0x59]) {
+		case 0x59:
+			switch (ROM[0xFFFFFF]) {
+				case ~0x0002:
+					rumble = RUMBLE_NDS;
+					return true;
+				case ~0x0101:
+					rumble = RUMBLE_NDS_SLIDE;
+					return true;
+			}
+			break;
+		case 0x96:
+			switch (ROM[0x56] & 0xFF) {
+				case 'R':
+				case 'V':
+					rumble = RUMBLE_GBA;
+					return true;
+			}
+			break;
 	}
 
+	rumble = RUMBLE_NONE;
 	return false;
+}
+
+static void set_motor(bool enable)
+{
+	switch (rumble) {
+		case RUMBLE_NONE:
+			break;
+		case RUMBLE_GBA:
+			ROM_GPIODIR  =      1 << 3;
+			ROM_GPIODATA = enable << 3;
+			break;
+		case RUMBLE_NDS:
+			if (enable)
+				DMA3COPY(SRAM, SRAM, DMA_VBLANK | DMA_REPEAT | 1)
+			else
+				REG_DMA3CNT &= ~DMA_REPEAT;
+			break;
+		case RUMBLE_NDS_SLIDE:
+			*ROM = enable << 8;
+			break;
+	}
 }
 
 uint8_t crc8_lut[256] = {
@@ -203,7 +244,7 @@ int IWRAM_CODE main(void)
 					if (crc5(address) != (buffer[2] & 0x1F)) break;
 
 					buffer[35] = pak_copyfrom(address, &buffer[3],
-						(address & 0x8000) == 0x8000 && has_motor() ? 0x81 : 0xFF);
+						(address & 0x8000) == 0x8000 && rumble ? 0x81 : 0xFF);
 
 					SISetResponse(&buffer[3], 264);
 				}
@@ -217,15 +258,8 @@ int IWRAM_CODE main(void)
 
 					SISetResponse(&buffer[35], 8);
 
-					if ((address & 0x8000) == 0x8000) {
-						if (buffer[3] & 0x01) {
-							ROM_GPIOCNT  = 1;
-							ROM_GPIODIR  = 1 << 3;
-							ROM_GPIODATA = 1 << 3;
-						} else {
-							ROM_GPIODATA = 0;
-						}
-					}
+					if ((address & 0x8000) == 0x8000 && has_motor())
+						set_motor(buffer[3] & 0x01);
 				}
 				break;
 		}
