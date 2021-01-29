@@ -57,7 +57,8 @@ enum {
 };
 
 struct buttons {
-	uint16_t            : 2;
+	uint16_t            : 1;
+	uint16_t unknown    : 1;
 	uint16_t get_origin : 1;
 	uint16_t start      : 1;
 	uint16_t y          : 1;
@@ -77,10 +78,11 @@ struct buttons {
 static struct {
 	uint16_t type;
 	struct {
-		uint8_t        : 2;
-		uint8_t origin : 1;
-		uint8_t motor  : 2;
-		uint8_t mode   : 3;
+		uint8_t            : 1;
+		uint8_t unknown    : 1;
+		uint8_t get_origin : 1;
+		uint8_t motor      : 2;
+		uint8_t mode       : 3;
 	} status;
 } id;
 
@@ -213,6 +215,7 @@ int main(void)
 		unsigned buttons     = ~REG_KEYINPUT;
 		origin.buttons.a     = !!(buttons & KEY_A);
 		origin.buttons.b     = !!(buttons & KEY_B);
+		origin.buttons.unknown = 
 		origin.buttons.z     = !!(buttons & KEY_SELECT);
 		origin.buttons.start = !!(buttons & KEY_START);
 		#ifndef ANALOG
@@ -223,6 +226,8 @@ int main(void)
 		#endif
 		origin.buttons.r     = !!(buttons & KEY_R);
 		origin.buttons.l     = !!(buttons & KEY_L);
+
+		id.status.unknown = origin.buttons.unknown;
 
 		switch (buffer[0]) {
 			case CMD_RESET:
