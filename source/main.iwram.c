@@ -34,10 +34,10 @@
 
 #define struct struct __attribute__((packed, scalar_storage_order("little-endian")))
 
-#define ROM           ((int16_t *)0x08000000)
-#define ROM_GPIODATA *((int16_t *)0x080000C4)
-#define ROM_GPIODIR  *((int16_t *)0x080000C6)
-#define ROM_GPIOCNT  *((int16_t *)0x080000C8)
+#define ROM           ((volatile int16_t *)0x08000000)
+#define ROM_GPIODATA *((volatile int16_t *)0x080000C4)
+#define ROM_GPIODIR  *((volatile int16_t *)0x080000C6)
+#define ROM_GPIOCNT  *((volatile int16_t *)0x080000C8)
 
 //#define ANALOG
 
@@ -83,6 +83,7 @@ static enum {
 	RUMBLE_NONE = 0,
 	RUMBLE_GBA,
 	RUMBLE_NDS,
+	RUMBLE_NDS_EZCARD,
 	RUMBLE_NDS_SLIDE,
 } rumble;
 
@@ -101,12 +102,14 @@ static bool has_motor(void)
 			break;
 		case 0x96:
 			switch (ROM[0x56] & 0xFF) {
-				case 'R':
-				case 'V':
+				case 'G': case 'R': case 'V':
 					rumble = RUMBLE_GBA;
 					return true;
 			}
 			break;
+		case ~0x0002:
+			rumble = RUMBLE_NDS_EZCARD;
+			return true;
 	}
 
 	rumble = RUMBLE_NONE;
@@ -127,6 +130,9 @@ static void set_motor(bool enable)
 				DMA3COPY(SRAM, SRAM, DMA_VBLANK | DMA_REPEAT | 1)
 			else
 				REG_DMA3CNT &= ~DMA_REPEAT;
+			break;
+		case RUMBLE_NDS_EZCARD:
+			ROM[0x000800] = enable << 1;
 			break;
 		case RUMBLE_NDS_SLIDE:
 			*ROM = enable << 8;
