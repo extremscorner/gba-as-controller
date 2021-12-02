@@ -133,7 +133,7 @@ $(OUTPUT).elf	:	$(OFILES)
 %.gba: %.elf
 	@$(OBJCOPY) -O binary $< $@
 	@echo built ... $(notdir $@)
-	@gbafix -tCONTROLLER -cGBAX -mEC -r$(shell git rev-list --count HEAD) $@
+	@gbafix -tCONTROLLER -cVGBA -mEC -r$(shell git rev-list --count HEAD) $@
 
 #---------------------------------------------------------------------------------
 # The bin2o rule should be copied and modified

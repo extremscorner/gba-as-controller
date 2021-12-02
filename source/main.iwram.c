@@ -25,6 +25,7 @@
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <gba_dma.h>
 #include <gba_input.h>
 #include <gba_interrupt.h>
@@ -117,6 +118,12 @@ static struct {
 			struct { uint8_t x, y; } substick;
 			struct { uint8_t a, b; } button;
 		} mode4;
+
+		struct {
+			struct { uint8_t x, y; } substick;
+			struct { uint8_t l, r; } trigger;
+			struct { uint8_t a, b; } button;
+		};
 	};
 } status;
 
@@ -127,7 +134,7 @@ static struct {
 	struct { uint8_t l, r; } trigger;
 	struct { uint8_t a, b; } button;
 } origin = {
-	.buttons  = { .use_origin = 1 },
+	.buttons  = { .get_origin = true, .use_origin = true },
 	.stick    = { 128, 128 },
 	.substick = { 128, 128 },
 };
@@ -157,7 +164,7 @@ static bool has_motor(void)
 			break;
 		case 0x96:
 			switch (ROM[0x56] & 0xFF) {
-				case 'G': case 'R': case 'V':
+				case 'R': case 'V':
 					rumble = RUMBLE_GBA;
 					return true;
 			}
@@ -216,7 +223,7 @@ int main(void)
 
 	while (true) {
 		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
-		if (length < 9) continue;
+		if (length < 8 + 1) continue;
 
 		unsigned buttons     = ~REG_KEYINPUT;
 		origin.buttons.a     = !!(buttons & KEY_A);
@@ -233,25 +240,30 @@ int main(void)
 		origin.buttons.r     = !!(buttons & KEY_R);
 		origin.buttons.l     = !!(buttons & KEY_L);
 
-		id.status.unknown = origin.buttons.unknown;
+		id.status.get_origin = origin.buttons.get_origin;
+		id.status.unknown    = origin.buttons.unknown;
 
 		switch (buffer[0]) {
 			case CMD_RESET:
 				id.status.motor = MOTOR_STOP;
 			case CMD_ID:
-				if (length == 9) {
+				if (length == 8 + 1) {
 					if (has_motor())
 						id.type = 0x0900;
 					else
 						id.type = 0x2900;
 
-					SISetResponse(&id, sizeof(id) * 8);
+					SISetResponse(&id, 24);
 				}
 				break;
 			case CMD_STATUS:
-				if (length == 25) {
-					id.status.mode  = buffer[1];
-					id.status.motor = buffer[2];
+				if (length == 24 + 1) {
+					unsigned mode  = buffer[1] & 0b111;
+					unsigned motor = buffer[2] & 0b11;
+
+					id.status.mode = mode;
+					if (motor <= MOTOR_STOP_HARD)
+						id.status.motor = motor;
 
 					status.buttons = origin.buttons;
 					status.stick.x = origin.stick.x;
@@ -271,54 +283,84 @@ int main(void)
 						default:
 							status.mode0.substick.x = origin.substick.x;
 							status.mode0.substick.y = origin.substick.y;
-							status.mode0.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
-							status.mode0.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
-							status.mode0.button.a   = (buttons & KEY_A ? 200 : origin.button.a) >> 4;
-							status.mode0.button.b   = (buttons & KEY_B ? 200 : origin.button.b) >> 4;
+							status.mode0.trigger.l = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
+							status.mode0.trigger.r = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
+							status.mode0.button.a  = (buttons & KEY_A ? 200 : origin.button.a)  >> 4;
+							status.mode0.button.b  = (buttons & KEY_B ? 200 : origin.button.b)  >> 4;
 							break;
 						case 1:
 							status.mode1.substick.x = origin.substick.x >> 4;
 							status.mode1.substick.y = origin.substick.y >> 4;
-							status.mode1.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l);
-							status.mode1.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r);
-							status.mode1.button.a   = (buttons & KEY_A ? 200 : origin.button.a) >> 4;
-							status.mode1.button.b   = (buttons & KEY_B ? 200 : origin.button.b) >> 4;
+							status.mode1.trigger.l = (buttons & KEY_L ? 200 : origin.trigger.l);
+							status.mode1.trigger.r = (buttons & KEY_R ? 200 : origin.trigger.r);
+							status.mode1.button.a  = (buttons & KEY_A ? 200 : origin.button.a)  >> 4;
+							status.mode1.button.b  = (buttons & KEY_B ? 200 : origin.button.b)  >> 4;
 							break;
 						case 2:
 							status.mode2.substick.x = origin.substick.x >> 4;
 							status.mode2.substick.y = origin.substick.y >> 4;
-							status.mode2.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
-							status.mode2.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
-							status.mode2.button.a   = (buttons & KEY_A ? 200 : origin.button.a);
-							status.mode2.button.b   = (buttons & KEY_B ? 200 : origin.button.b);
+							status.mode2.trigger.l = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
+							status.mode2.trigger.r = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
+							status.mode2.button.a  = (buttons & KEY_A ? 200 : origin.button.a);
+							status.mode2.button.b  = (buttons & KEY_B ? 200 : origin.button.b);
 							break;
 						case 3:
 							status.mode3.substick.x = origin.substick.x;
 							status.mode3.substick.y = origin.substick.y;
-							status.mode3.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l);
-							status.mode3.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r);
+							status.mode3.trigger.l = (buttons & KEY_L ? 200 : origin.trigger.l);
+							status.mode3.trigger.r = (buttons & KEY_R ? 200 : origin.trigger.r);
 							break;
 						case 4:
 							status.mode4.substick.x = origin.substick.x;
 							status.mode4.substick.y = origin.substick.y;
-							status.mode4.button.a   = (buttons & KEY_A ? 200 : origin.button.a);
-							status.mode4.button.b   = (buttons & KEY_B ? 200 : origin.button.b);
+							status.mode4.button.a  = (buttons & KEY_A ? 200 : origin.button.a);
+							status.mode4.button.b  = (buttons & KEY_B ? 200 : origin.button.b);
 							break;
 					}
 
-					SISetResponse(&status, sizeof(status) * 8);
+					SISetResponse(&status, 64);
 				}
 				break;
 			case CMD_ORIGIN:
-				if (length == 9) SISetResponse(&origin, sizeof(origin) * 8);
+				if (length == 8 + 1) {
+					origin.buttons.get_origin = false;
+					SISetResponse(&origin, 80);
+				}
 				break;
 			case CMD_RECALIBRATE:
+				if (length == 24 + 1) {
+					origin.buttons.get_origin = false;
+					SISetResponse(&origin, 80);
+				}
+				break;
 			case CMD_STATUS_LONG:
-				if (length == 25) {
-					id.status.mode  = buffer[1];
-					id.status.motor = buffer[2];
+				if (length == 24 + 1) {
+					unsigned motor = buffer[2] & 0b11;
 
-					SISetResponse(&origin, sizeof(origin) * 8);
+					if (motor <= MOTOR_STOP_HARD)
+						id.status.motor = motor;
+
+					status.buttons = origin.buttons;
+					status.stick.x = origin.stick.x;
+					status.stick.y = origin.stick.y;
+					#ifdef ANALOG
+					if (buttons & KEY_RIGHT)
+						status.stick.x = origin.stick.x + 100;
+					else if (buttons & KEY_LEFT)
+						status.stick.x = origin.stick.x - 100;
+					if (buttons & KEY_UP)
+						status.stick.y = origin.stick.y + 100;
+					else if (buttons & KEY_DOWN)
+						status.stick.y = origin.stick.y - 100;
+					#endif
+					status.substick.x = origin.substick.x;
+					status.substick.y = origin.substick.y;
+					status.trigger.l = (buttons & KEY_L ? 200 : origin.trigger.l);
+					status.trigger.r = (buttons & KEY_R ? 200 : origin.trigger.r);
+					status.button.a  = (buttons & KEY_A ? 200 : origin.button.a);
+					status.button.b  = (buttons & KEY_B ? 200 : origin.button.b);
+
+					SISetResponse(&status, 80);
 				}
 				break;
 		}
